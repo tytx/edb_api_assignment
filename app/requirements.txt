@@ -1,0 +1,12 @@
+psycopg2-binary==2.9.10
+sqlalchemy==2.0.43
+python-dotenv
+boto3
+greenlet==3.2.4
+fastapi==0.117.1
+pydantic==2.11.9
+email-validator>=2.0.0
+mangum==0.18.0
+bleach==6.1.0
+phonenumbers==8.13.47
+pyjwt==2.8.0

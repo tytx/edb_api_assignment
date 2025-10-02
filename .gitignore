@@ -1,0 +1,44 @@
+# Environment variables & secrets
+.env
+pass.ps1
+pass.sh
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# AWS SAM
+.aws-sam/
+samconfig.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local database
+*.db
+*.sqlite3

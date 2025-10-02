@@ -1,0 +1,160 @@
+openapi: 3.0.3
+info:
+  title: Membership API
+  version: 1.0.0
+  description: A REST API to collect and retrieve membership sign-up data.
+
+paths:
+  /members:
+    post:
+      summary: Submit membership data
+      description: Create a new member record from sign-up form data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberCreate'
+      responses:
+        '201':
+          description: Member created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: Retrieve members
+      description: Fetch all members, optionally filtering by first or last name.
+      parameters:
+        - name: firstName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter members by first name
+        - name: lastName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter members by last name
+      responses:
+        '200':
+          description: List of members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembersResponse'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /members/{id}:
+    get:
+      summary: Retrieve a single member
+      description: Fetch one member by their unique ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Unique ID of the member
+      responses:
+        '200':
+          description: Member found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '404':
+          description: Member not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    MemberCreate:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: integer
+        age:
+          type: integer
+        isEmployee:
+          type: boolean
+      required:
+        - firstName
+        - lastName
+        - email
+
+    Member:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: integer
+        age:
+          type: integer
+        isEmployee:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - firstName
+        - lastName
+        - email
+        - createdAt
+
+    MembersResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Members retrieved successfully"
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+      required:
+        - message
+        - members
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message

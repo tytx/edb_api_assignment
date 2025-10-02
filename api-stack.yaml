@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: API Stack - FastAPI Lambda + Cognito + API Gateway (references Database Stack)
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+  DatabaseStackName:
+    Type: String
+    Description: Name of the database stack to import values from
+    Default: membership-db-stack
+
+  NotificationEmail:
+    Type: String
+    Description: Email address to receive new member notifications
+    Default: admin@yourdomain.com
+
+Resources:
+
+  # -------------------------
+  # Cognito
+  # -------------------------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-user-pool"
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${AWS::StackName}-app-client"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - https://oauth.pstmn.io/v1/callback
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+      UserPoolId: !Ref UserPool
+
+  # -------------------------
+  # API Gateway
+  # -------------------------
+  MembershipApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: MembershipApi
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+            Identity:
+              Header: Authorization
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              X-Content-Type-Options: "'nosniff'"
+              X-Frame-Options: "'DENY'"
+              X-XSS-Protection: "'1; mode=block'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              X-Content-Type-Options: "'nosniff'"
+              X-Frame-Options: "'DENY'"
+              X-XSS-Protection: "'1; mode=block'"
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 100
+          ThrottlingRateLimit: 50
+
+  # Lambda layers no longer needed with containerized deployment
+
+  # -------------------------
+  # Lambda Function
+  # -------------------------
+  MembershipFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      CodeUri: app/
+      Architectures:
+        - x86_64
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${DatabaseStackName}-LambdaSecurityGroup-ID"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${DatabaseStackName}-PrivateSubnet1-ID"
+          - Fn::ImportValue: !Sub "${DatabaseStackName}-PrivateSubnet2-ID"
+      Environment:
+        Variables:
+          DB_HOST:
+            Fn::ImportValue: !Sub "${DatabaseStackName}-Database-Endpoint"
+          DB_PORT:
+            Fn::ImportValue: !Sub "${DatabaseStackName}-Database-Port"
+          DB_NAME:
+            Fn::ImportValue: !Sub "${DatabaseStackName}-Database-Name"
+          DB_SECRET_ARN:
+            Fn::ImportValue: !Sub "${DatabaseStackName}-Database-Secret-ARN"
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_CLIENT_ID: !Ref UserPoolClient
+          NOTIFICATION_EMAIL: !Ref NotificationEmail
+          AWS_REGION_NAME: !Ref AWS::Region
+      Policies:
+        - VPCAccessPolicy: {}
+        - Statement:
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              Fn::ImportValue: !Sub "${DatabaseStackName}-Database-Secret-ARN"
+          - Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
+            Resource: "*"
+      Events:
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MembershipApi
+            Path: /health
+            Method: GET
+            Auth:
+              Authorizer: NONE
+        MembersApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MembershipApi
+            Path: /members
+            Method: ANY
+        MemberByIdApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MembershipApi
+            Path: /members/{id}
+            Method: ANY
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./app
+      DockerTag: membership-function
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${MembershipApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/"
+
+  UserPoolId:
+    Description: "Cognito User Pool ID"
+    Value: !Ref UserPool
+
+  UserPoolClientId:
+    Description: "Cognito User Pool Client ID"
+    Value: !Ref UserPoolClient
+
+  LambdaFunctionArn:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt MembershipFunction.Arn

@@ -1,0 +1,288 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Database Stack - VPC + RDS PostgreSQL + Secrets + NAT Gateway
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues: [db.t3.micro, db.t3.small, db.t3.medium]
+
+  DBName:
+    Type: String
+    Default: membership_db
+
+  DBUser:
+    Type: String
+    Default: postgres
+
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+
+Resources:
+
+  # -------------------------
+  # VPC + Subnets
+  # -------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-VPC"
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.10.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Public-Subnet-1"
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Public-Subnet-2"
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Private-Subnet-1"
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Private-Subnet-2"
+
+  # -------------------------
+  # Internet Gateway + NAT
+  # -------------------------
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-IGW"
+
+  IGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  NatEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: IGWAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-NAT-GW"
+
+  # -------------------------
+  # Route Tables
+  # -------------------------
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Public-RT"
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: IGWAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Private-RT"
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # -------------------------
+  # Security Groups
+  # -------------------------
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Lambda SG
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS SG
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+
+  # -------------------------
+  # Database + Secret
+  # -------------------------
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}-db-secret"
+      Description: DB credentials
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DBUser}"}'
+        GenerateStringKey: password
+        PasswordLength: 16
+        ExcludeCharacters: "\"@/\\`"
+        IncludeSpace: false
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: RDS Subnet Group
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-db-subnet-group"
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "${AWS::StackName}-db"
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: "16.10"
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+      DBName: !Ref DBName
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      AllocatedStorage: 20
+      StorageType: gp2
+      BackupRetentionPeriod: 7
+      MultiAZ: false
+      StorageEncrypted: true
+
+Outputs:
+  VPCId:
+    Description: "VPC ID"
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${AWS::StackName}-VPC-ID"
+
+  PrivateSubnet1Id:
+    Description: "Private Subnet 1 ID"
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnet1-ID"
+
+  PrivateSubnet2Id:
+    Description: "Private Subnet 2 ID"
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnet2-ID"
+
+  LambdaSecurityGroupId:
+    Description: "Lambda Security Group ID"
+    Value: !Ref LambdaSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-LambdaSecurityGroup-ID"
+
+  DatabaseEndpoint:
+    Description: "RDS Endpoint"
+    Value: !GetAtt Database.Endpoint.Address
+    Export:
+      Name: !Sub "${AWS::StackName}-Database-Endpoint"
+
+  DatabasePort:
+    Description: "RDS Port"
+    Value: !GetAtt Database.Endpoint.Port
+    Export:
+      Name: !Sub "${AWS::StackName}-Database-Port"
+
+  DatabaseSecretArn:
+    Description: "Database Secret ARN"
+    Value: !Ref DatabaseSecret
+    Export:
+      Name: !Sub "${AWS::StackName}-Database-Secret-ARN"
+
+  DBName:
+    Description: "Database Name"
+    Value: !Ref DBName
+    Export:
+      Name: !Sub "${AWS::StackName}-Database-Name"
