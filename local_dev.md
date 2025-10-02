@@ -27,12 +27,18 @@ cp .env.example .env
 Edit [.env](.env) with your configuration:
 
 ```env
+# Database Configuration
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=members
 DB_USER=user
 DB_PASSWORD=password
 ```
+# API Authentication (Local Development Only)
+see: https://share.doppler.com/s/vxyafttalcjfm5vbwzem0bwwmj4igzznyc8lzfid#bt7B7O1hiQ0rGeCHo2Yp6DNAfgpoYusUHKWH4JaE5dlourWgpu5zPtBNXJIB9ATA 
+
+
+**Note:** The `API_KEY` is used for local development authentication. In production, AWS Cognito handles authentication.
 
 ### 3. Start PostgreSQL Database
 
@@ -95,12 +101,20 @@ Once the server is running, access the interactive API documentation:
 
 ## Key Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/members` | Get members by name |
-| POST | `/members` | Create new member |
-| GET | `/members/{id}` | Get member by ID |
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| GET | `/health` | Health check | No |
+| GET | `/members` | Get members by name | Yes |
+| POST | `/members` | Create new member | Yes |
+| GET | `/members/{id}` | Get member by ID | Yes |
+
+### Authentication
+
+All endpoints except `/health` require an API key in the request header:
+
+https://share.doppler.com/s/vxyafttalcjfm5vbwzem0bwwmj4igzznyc8lzfid#bt7B7O1hiQ0rGeCHo2Yp6DNAfgpoYusUHKWH4JaE5dlourWgpu5zPtBNXJIB9ATA
+
+**Note:** This is for local development only. In production, AWS Cognito OAuth 2.0 is used.
 
 ## Database Management
 
@@ -180,28 +194,36 @@ pip freeze > app/requirements.txt
 
 ### Manual Testing with cURL
 
-**Health Check:**
+**Health Check (No Auth):**
 ```bash
 curl http://localhost:8000/health
 ```
 
-**Get All Members:**
+**Get Members by Name (With Auth):**
 ```bash
-curl http://localhost:8000/members
+curl http://localhost:8000/members?firstName=John \
+  -H "X-API-Key: dev-api-key-12345"
 ```
 
-**Create Member:**
+**Create Member (With Auth):**
 ```bash
 curl -X POST http://localhost:8000/members \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-api-key-12345" \
   -d '{
     "firstName": "Jane",
     "lastName": "Doe",
     "email": "jane.doe@example.com",
-    "phone": "91234567",
+    "phone": 91234567,
     "age": 25,
     "isEmployee": false
   }'
+```
+
+**Get Member by ID (With Auth):**
+```bash
+curl http://localhost:8000/members/{member-id} \
+  -H "X-API-Key: dev-api-key-12345"
 ```
 
 ## Troubleshooting
@@ -276,7 +298,9 @@ docker-compose down -v
 
 ## Notes
 
-- The local environment automatically creates database tables on startup 
-- Sample data is seeded automatically if the database is empty (see seed.py)
-- AWS Cognito authentication is **disabled** in local development
+- The local environment automatically creates database tables on startup
+- Sample data is seeded automatically if the database is empty (see [seed.py](app/seed.py))
+- **Local authentication uses API keys** (via `X-API-Key` header)
+- **Production uses AWS Cognito OAuth 2.0** (Bearer token authentication)
+- The authentication system automatically detects the environment and uses the appropriate method
 - Email notifications require AWS SES configuration (not available locally)
