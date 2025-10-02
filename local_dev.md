@@ -118,7 +118,7 @@ https://share.doppler.com/s/vxyafttalcjfm5vbwzem0bwwmj4igzznyc8lzfid#bt7B7O1hiQ0
 
 ## Database Management
 
-### Access PostgreSQL Container
+### Access PostgreSQL Container OR recommended to use DBEAVER SQL workbench instead
 
 ```bash
 docker exec -it members-postgres psql -U user -d members
