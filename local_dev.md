@@ -114,6 +114,9 @@ All endpoints except `/health` require an API key in the request header:
 
 https://share.doppler.com/s/vxyafttalcjfm5vbwzem0bwwmj4igzznyc8lzfid#bt7B7O1hiQ0rGeCHo2Yp6DNAfgpoYusUHKWH4JaE5dlourWgpu5zPtBNXJIB9ATA
 
+<img width="596" height="312" alt="image" src="https://github.com/user-attachments/assets/274cdcef-8be1-4688-a59b-3f5fbbbefd74" />
+
+
 **Note:** This is for local development only. In production, AWS Cognito OAuth 2.0 is used.
 
 ## Database Management
