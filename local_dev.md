@@ -104,7 +104,7 @@ Once the server is running, access the interactive API documentation:
 
 ## Database Management
 
-### Access PostgreSQL Container
+### Access PostgreSQL Container OR recommended to use DBEAVER SQL workbench instead
 
 ```bash
 docker exec -it members-postgres psql -U user -d members
