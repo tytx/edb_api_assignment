@@ -6,6 +6,7 @@ from typing import Optional
 from database.database import get_db
 from models.member_model import MemberCreate, Member, MembersResponse, ErrorResponse
 from services.member_service import create_member, get_members, get_member_by_id
+from utils.auth import verify_api_key
 import jwt
 import os
 
@@ -27,7 +28,12 @@ def get_cognito_user_email(request: Request) -> Optional[str]:
         return None
 
 @router.post("/members", response_model=Member, status_code=201)
-def create_member_route(member: MemberCreate, request: Request, db: Session = Depends(get_db)):
+def create_member_route(
+    member: MemberCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
     # Extract Cognito user email from JWT token
     cognito_email = get_cognito_user_email(request)
     db_member = create_member(db, member, cognito_email)
@@ -38,7 +44,9 @@ def list_members_route(
     firstName: Optional[str] = None,
     lastName: Optional[str] = None,
     db: Session = Depends(get_db),
-    request: Request = None):
+    request: Request = None,
+    api_key: str = Depends(verify_api_key)
+):
     allowed = {"firstName", "lastName"}
     for param in request.query_params:
         if param not in allowed:
@@ -52,7 +60,11 @@ def list_members_route(
     return MembersResponse(message="Members retrieved successfully", members=members)
 
 @router.get("/members/{id}", response_model=Member)
-def get_member_route(id: UUID, db: Session = Depends(get_db)):
+def get_member_route(
+    id: UUID,
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
     db_member = get_member_by_id(db, id)
     if not db_member:
         raise HTTPException(status_code=404, detail="Member not found")
